@@ -50,7 +50,8 @@ that POSTs JSON/text containing a title/message string.
 | `WEBHOOK_PORT` | `8080` | Listen port inside the container |
 | `WEBHOOK_PATH` | `/trigger` | Only accept POSTs to this path |
 | `WEBHOOK_TOKEN` | (none) | If set, require `?token=...` on the request |
-| `MATCH_KEYWORDS` | `up` | Comma-separated; **all** must appear in the payload to trigger |
+| `MATCH_RULES` | (none) | Rules separated by `;`, keywords by `,`. Triggers if **any** rule matches (all its keywords present). Preferred. e.g. `My VM,down ; My Host,up` |
+| `MATCH_KEYWORDS` | `up` | Legacy single-rule form (all required); used only if `MATCH_RULES` unset |
 | `MATCH_FIELD` | (none) | JSON key to read text from; empty = match whole body |
 | `TRIGGER_DELAY` | `40` | Seconds to wait after event before logging in |
 | `TRIGGER_COOLDOWN` | `120` | Min seconds between two triggers (debounce) |
@@ -72,12 +73,21 @@ docker run --rm --env-file .env <your-image>
 docker run -d --env-file .env -p 55679:8080 <your-image>
 ```
 
-### Example: trigger from Beszel when a host comes back online
+### Example: trigger from Beszel
 
-Point a Beszel shoutrrr **generic** webhook at this listener and set
-`MATCH_KEYWORDS=<system name>,up`. Beszel sends a title like
-`Connection to <system name> is up ✅` only on the offline→online edge, so the
-login fires exactly when the target host reboots and nobody has logged in yet.
+Point a Beszel shoutrrr **generic** webhook (with `disabletls=yes` for a plain-HTTP
+listener) at this service. Beszel sends titles like `Connection to <name> is up ✅`
+or `Connection to <name> is down 🔴` only on state-change edges.
+
+Belt-and-suspenders with two rules — fire when the VM goes offline **or** when the
+host comes back online:
+
+```
+MATCH_RULES=<VM name>,down ; <host name>,up
+```
+
+A `TRIGGER_COOLDOWN` long enough to cover login + guest-VM boot + re-detection
+prevents repeat triggers while the VM is coming up.
 
 ## GitHub Actions secrets required
 

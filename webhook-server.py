@@ -13,8 +13,12 @@ Environment (all optional, sensible defaults):
   WEBHOOK_PORT        listen port                                  [default 8080]
   WEBHOOK_PATH        only accept this path                        [default /trigger]
   WEBHOOK_TOKEN       if set, require ?token=... to match          [default empty = no auth]
-  MATCH_KEYWORDS      comma-separated; ALL must appear in payload  [default "up"]
-                      e.g. "My Windows Host,up"
+  MATCH_RULES         rules separated by ';', keywords by ',';     [preferred]
+                      triggers if ANY rule matches (all its keywords present).
+                      e.g. "My VM,down ; My Host,up"
+                           -> (My VM AND down) OR (My Host AND up)
+  MATCH_KEYWORDS      legacy single-rule form (all keywords req'd) [default "up"]
+                      used only when MATCH_RULES is unset. e.g. "My Host,up"
   MATCH_FIELD         json key to read text from, else whole body  [default "" = whole body]
   TRIGGER_DELAY       seconds to wait before running login         [default 40]
   LOGIN_SCRIPT        path to the login script                     [default /app/rdp-login.sh]
@@ -32,11 +36,35 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 PORT = int(os.environ.get("WEBHOOK_PORT", "8080"))
 PATH = os.environ.get("WEBHOOK_PATH", "/trigger")
 TOKEN = os.environ.get("WEBHOOK_TOKEN", "")
-KEYWORDS = [k.strip() for k in os.environ.get("MATCH_KEYWORDS", "up").split(",") if k.strip()]
 MATCH_FIELD = os.environ.get("MATCH_FIELD", "")
 DELAY = int(os.environ.get("TRIGGER_DELAY", "40"))
 LOGIN_SCRIPT = os.environ.get("LOGIN_SCRIPT", "/app/rdp-login.sh")
 COOLDOWN = int(os.environ.get("TRIGGER_COOLDOWN", "120"))
+
+
+def _parse_rules():
+    """
+    Build a list of rules; the payload triggers if ANY rule matches.
+    Each rule is a list of keywords that must ALL be present (case-insensitive).
+
+    MATCH_RULES (preferred): rules separated by ';', keywords within a rule by ','.
+      e.g. "Host A,down ; Host B,up"  ->  (Host A AND down) OR (Host B AND up)
+    MATCH_KEYWORDS (legacy, single rule): comma-separated keywords, all required.
+      e.g. "Host A,up"  ->  (Host A AND up)
+    """
+    raw_rules = os.environ.get("MATCH_RULES", "").strip()
+    if raw_rules:
+        rules = []
+        for group in raw_rules.split(";"):
+            kws = [k.strip() for k in group.split(",") if k.strip()]
+            if kws:
+                rules.append(kws)
+        return rules
+    legacy = [k.strip() for k in os.environ.get("MATCH_KEYWORDS", "up").split(",") if k.strip()]
+    return [legacy] if legacy else []
+
+
+RULES = _parse_rules()
 
 _last_trigger = 0.0
 _lock = threading.Lock()
@@ -61,9 +89,12 @@ def extract_text(raw: bytes) -> str:
 
 
 def matches(text: str) -> bool:
-    """Case-insensitive: every keyword in MATCH_KEYWORDS must be present."""
+    """Case-insensitive: triggers if ANY rule matches (all keywords in that rule present)."""
     low = text.lower()
-    return all(k.lower() in low for k in KEYWORDS)
+    for rule in RULES:
+        if all(k.lower() in low for k in rule):
+            return True
+    return False
 
 
 def run_login():
@@ -109,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
         text = extract_text(raw)
         snippet = text.replace("\n", " ")[:200]
         if matches(text):
-            log(f"payload MATCHED keywords={KEYWORDS}: {snippet}")
+            log(f"payload MATCHED rules={RULES}: {snippet}")
             threading.Thread(target=run_login, daemon=True).start()
             self._reply(200, "triggered")
         else:
@@ -128,7 +159,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    log(f"listening on :{PORT}{PATH}  keywords={KEYWORDS}  delay={DELAY}s  cooldown={COOLDOWN}s  auth={'yes' if TOKEN else 'no'}")
+    log(f"listening on :{PORT}{PATH}  rules={RULES}  delay={DELAY}s  cooldown={COOLDOWN}s  auth={'yes' if TOKEN else 'no'}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 
