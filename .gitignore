@@ -7,3 +7,7 @@
 output/
 *.png
 build.log
+
+# python bytecode
+__pycache__/
+*.pyc

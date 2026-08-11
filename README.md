@@ -21,6 +21,14 @@ derived entirely from repository secrets (see below).
 
 ## Configuration — all via environment variables
 
+### Run mode
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `MODE` | `once` | `once` = run one login and exit (manual / one-shot). `webhook` = run an event-driven listener that triggers a login when a matching webhook arrives. |
+
+### RDP connection (both modes)
+
 | Var | Required | Default | Meaning |
 |-----|----------|---------|---------|
 | `RDP_HOST` | yes | — | Target host |
@@ -30,19 +38,46 @@ derived entirely from repository secrets (see below).
 | `RENDER_WAIT` | no | `8` | Seconds to wait for the session to render before Enter |
 | `HOLD_AFTER` | no | `20` | Seconds to hold the session open after Enter |
 
+### Webhook mode (`MODE=webhook`)
+
+Idle-cost is effectively zero: it blocks on the socket and only wakes on a request
+(no polling). On a matching POST it waits `TRIGGER_DELAY` then runs the login once.
+Designed for a shoutrrr **generic** webhook (e.g. Beszel), but works with anything
+that POSTs JSON/text containing a title/message string.
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `WEBHOOK_PORT` | `8080` | Listen port inside the container |
+| `WEBHOOK_PATH` | `/trigger` | Only accept POSTs to this path |
+| `WEBHOOK_TOKEN` | (none) | If set, require `?token=...` on the request |
+| `MATCH_KEYWORDS` | `up` | Comma-separated; **all** must appear in the payload to trigger |
+| `MATCH_FIELD` | (none) | JSON key to read text from; empty = match whole body |
+| `TRIGGER_DELAY` | `40` | Seconds to wait after event before logging in |
+| `TRIGGER_COOLDOWN` | `120` | Min seconds between two triggers (debounce) |
+
 The image itself contains **no credentials**. Everything sensitive is injected at
 run time via `--env-file`. See `.env.example` for the file format.
 
 ## Run
 
 ```bash
-# Create a local .env from the template and fill in real values:
 cp .env.example .env
 chmod 600 .env
 # edit .env ...
 
+# one-shot login:
 docker run --rm --env-file .env <your-image>
+
+# or event-driven listener (set MODE=webhook in .env):
+docker run -d --env-file .env -p 55679:8080 <your-image>
 ```
+
+### Example: trigger from Beszel when a host comes back online
+
+Point a Beszel shoutrrr **generic** webhook at this listener and set
+`MATCH_KEYWORDS=<system name>,up`. Beszel sends a title like
+`Connection to <system name> is up ✅` only on the offline→online edge, so the
+login fires exactly when the target host reboots and nobody has logged in yet.
 
 ## GitHub Actions secrets required
 
