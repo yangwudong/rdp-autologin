@@ -1,0 +1,9 @@
+# real secrets — never commit
+.env
+*.env
+!.env.example
+
+# screenshots / scratch
+output/
+*.png
+build.log
