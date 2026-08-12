@@ -28,11 +28,11 @@ Xvfb :99 -screen 0 1280x800x24 -nolisten tcp &
 XVFB_PID=$!
 sleep 2
 
-echo "== [2] xfreerdp -> $RDP_HOST (user=$RDP_USER domain=${RDP_DOMAIN:-<none>}, sec:rdp) =="
+echo "== [2] xfreerdp -> $RDP_HOST (user=$RDP_USER domain=${RDP_DOMAIN:-<none>}, sec:tls) =="
 DOMAIN_ARG=()
 [ -n "$RDP_DOMAIN" ] && DOMAIN_ARG=(/d:"$RDP_DOMAIN")
 xfreerdp /v:"$RDP_HOST" /u:"$RDP_USER" "${DOMAIN_ARG[@]}" /p:"$RDP_PASSWORD" \
-    /cert:ignore /sec:rdp /w:1280 /h:800 /log-level:WARN \
+    /cert:ignore /sec:tls /w:1280 /h:800 /log-level:WARN \
     > /tmp/xfreerdp.log 2>&1 &
 XFREERDP_PID=$!
 
