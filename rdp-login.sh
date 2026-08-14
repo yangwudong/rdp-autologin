@@ -39,6 +39,15 @@ XFREERDP_PID=$!
 echo "== [3] wait ${RENDER_WAIT}s for render =="
 sleep "$RENDER_WAIT"
 
+# Fail fast if the connection died (auth error / host unreachable): the retry
+# logic lives in webhook-server.py, no point sending keys to a dead session.
+if ! kill -0 "$XFREERDP_PID" 2>/dev/null; then
+    echo "== xfreerdp exited early, connection likely failed. log tail: =="
+    tail -5 /tmp/xfreerdp.log 2>/dev/null || true
+    kill "$XVFB_PID" 2>/dev/null || true
+    exit 1
+fi
+
 echo "== [4] send Enter (dismiss Legal Notice / OK) =="
 xdotool key --delay 200 Return
 
